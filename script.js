@@ -2,10 +2,9 @@ const PLAYLIST_ID = "PLP8gZUHFGFVYLM5qkPlMivAiQ9LHvgI1M";
 
 let player;
 let ready = false;
-let lastVolume = 70;
 let totalTracks = 0;
-let lastIndex = 0;
-let skipTimer = null;
+let lastVolume = 70;
+let errorSkipTimer = null;
 
 const playBtn = document.getElementById("playBtn");
 const titleEl = document.getElementById("trackTitle");
@@ -25,56 +24,27 @@ function updateInfo() {
 
   const data = player.getVideoData() || {};
   const index = player.getPlaylistIndex();
-
-  if (index >= 0) lastIndex = index;
-
-  // Save the playlist length whenever YouTube provides it.
-  // Do NOT reset it to zero if YouTube temporarily returns [].
   const playlist = player.getPlaylist();
+
   if (Array.isArray(playlist) && playlist.length > 0) {
     totalTracks = playlist.length;
   }
 
   if (data.title) titleEl.textContent = data.title;
 
-  const trackText = totalTracks
-    ? ` • Track ${lastIndex + 1} of ${totalTracks}`
-    : "";
-
   if (artistEl) {
-    artistEl.textContent = `${data.author || "YouTube"}${trackText}`;
+    const track = (index >= 0 && totalTracks > 0)
+      ? ` • Track ${index + 1} of ${totalTracks}`
+      : "";
+    artistEl.textContent = `${data.author || "YouTube"}${track}`;
   }
-}
-
-function advanceToNext() {
-  if (!ready) return;
-
-  clearTimeout(skipTimer);
-  updateInfo();
-
-  // If we know we are on the last track, restart the playlist.
-  if (totalTracks > 0 && lastIndex >= totalTracks - 1) {
-    status("Restarting playlist…");
-    player.playVideoAt(0);
-    return;
-  }
-
-  // IMPORTANT: Do not check getPlaylist() here.
-  // YouTube may temporarily return an empty array when a song ends,
-  // even though its internal playlist is still loaded.
-  status("Loading next track…");
-  player.nextVideo();
-}
-
-function scheduleNext() {
-  clearTimeout(skipTimer);
-  skipTimer = setTimeout(advanceToNext, 600);
 }
 
 function onYouTubeIframeAPIReady() {
   player = new YT.Player("player", {
-    height: "1",
-    width: "1",
+    // Keep a valid YouTube player viewport. It can be hidden with CSS.
+    height: "200",
+    width: "200",
     playerVars: {
       listType: "playlist",
       list: PLAYLIST_ID,
@@ -82,58 +52,60 @@ function onYouTubeIframeAPIReady() {
       controls: 0,
       playsinline: 1,
       rel: 0,
-      modestbranding: 1
+      enablejsapi: 1,
+      origin: window.location.origin
     },
     events: {
       onReady: function () {
         ready = true;
         player.setVolume(lastVolume);
 
+        // Let YouTube itself control the complete playlist.
         player.cuePlaylist({
           listType: "playlist",
           list: PLAYLIST_ID,
           index: 0
         });
 
+        // Loop only after the actual last track.
+        player.setLoop(true);
+
         status("Ready — press Play");
 
-        // Give YouTube time to populate playlist metadata.
         setTimeout(updateInfo, 1500);
         setTimeout(updateInfo, 3000);
       },
 
       onStateChange: function (event) {
         if (event.data === YT.PlayerState.PLAYING) {
-          clearTimeout(skipTimer);
+          clearTimeout(errorSkipTimer);
           playBtn.textContent = "❚❚";
           status("LIVE — playing from YouTube");
           updateInfo();
-        }
-
-        if (event.data === YT.PlayerState.PAUSED) {
-          clearTimeout(skipTimer);
+        } else if (event.data === YT.PlayerState.PAUSED) {
           playBtn.textContent = "▶";
           status("Paused");
-        }
-
-        if (event.data === YT.PlayerState.BUFFERING) {
+        } else if (event.data === YT.PlayerState.BUFFERING) {
           status("Buffering…");
-        }
-
-        if (event.data === YT.PlayerState.CUED) {
+        } else if (event.data === YT.PlayerState.CUED) {
+          // Reapply loop after the playlist has actually been loaded.
+          player.setLoop(true);
           updateInfo();
           status("Ready — press Play");
         }
 
-        if (event.data === YT.PlayerState.ENDED) {
-          updateInfo();
-          scheduleNext();
-        }
+        // IMPORTANT:
+        // No ENDED handler and no manual nextVideo().
+        // YouTube advances Track 1 -> 2 -> 3 ... -> 200 itself.
       },
 
       onError: function () {
+        // Only skip when YouTube explicitly reports a bad/unembeddable item.
+        clearTimeout(errorSkipTimer);
         status("Unavailable track — skipping…");
-        scheduleNext();
+        errorSkipTimer = setTimeout(function () {
+          if (ready) player.nextVideo();
+        }, 1000);
       }
     }
   });
@@ -153,7 +125,7 @@ playBtn.addEventListener("click", function () {
 });
 
 document.getElementById("nextBtn").addEventListener("click", function () {
-  if (ready) advanceToNext();
+  if (ready) player.nextVideo();
 });
 
 document.getElementById("prevBtn").addEventListener("click", function () {
@@ -166,10 +138,8 @@ document.getElementById("liveBtn").addEventListener("click", function () {
 
 volumeEl.addEventListener("input", function (event) {
   if (!ready) return;
-
   lastVolume = Number(event.target.value);
   player.setVolume(lastVolume);
-
   if (lastVolume > 0) player.unMute();
 });
 
