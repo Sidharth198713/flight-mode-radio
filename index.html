@@ -3,77 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#080b1a">
-  <title>Flight Mode Radio — 24/7 Endless Music</title>
+  <title>Flight Mode Radio</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="page-glow glow-left"></div>
-  <div class="page-glow glow-right"></div>
-
-  <header class="topbar">
-    <button class="menu-btn" aria-label="Menu"><span></span><span></span><span></span></button>
-    <div class="status"><i></i><b>24/7</b><span>ENDLESS MUSIC</span></div>
-  </header>
-
   <main>
-    <section class="hero">
-      <div class="equalizer eq-left" aria-hidden="true"></div>
-      <div class="equalizer eq-right" aria-hidden="true"></div>
+    <h1>FLIGHT MODE</h1>
+    <p>24/7 MUSIC RADIO</p>
 
-      <div class="brand-mark">
-        <div class="headphones">
-          <div class="plane">✈</div>
-        </div>
-      </div>
-
-      <h1><span>FLIGHT</span> <em>MODE</em></h1>
-      <div class="subtitle">INTERNET RADIO</div>
-      <p class="tagline">Music that takes you higher</p>
-
-      <div class="controls">
-        <div class="volume-wrap">
-          <button class="round small" id="muteBtn" aria-label="Mute">🔊</button>
-          <input id="volume" type="range" min="0" max="100" value="70" aria-label="Volume">
-        </div>
-
-        <button class="round" id="prevBtn" aria-label="Previous">⏮</button>
-        <button class="round play" id="playBtn" aria-label="Play">▶</button>
-        <button class="round" id="nextBtn" aria-label="Next">⏭</button>
-        <div class="live-wrap">
-          <button class="round" id="liveBtn" aria-label="Live radio">◉</button>
-          <span>LIVE RADIO</span>
-        </div>
-      </div>
-    </section>
-
-    <section class="now-playing">
-      <div class="art">
-        <div class="silhouette">🎙</div>
-      </div>
-      <div class="track-info">
-        <div class="eyebrow">NOW PLAYING <span>〰</span></div>
-        <h2 id="trackTitle">Flight Mode Radio</h2>
-        <p id="trackArtist">Loading YouTube playlist…</p><div id="playerStatus" class="player-status">Preparing player…</div>
-        <span class="youtube-badge">▶ PLAYING FROM YOUTUBE</span>
-      </div>
-      <div class="visualizer" id="visualizer" aria-hidden="true"></div>
-      <button class="heart" id="heartBtn" aria-label="Like">♥</button>
-      <div class="progress-line"><div id="progressFill"></div></div>
-    </section>
-
-    <div id="playerWrap" aria-hidden="true">
+    <div id="playerWrap">
       <div id="player"></div>
     </div>
 
-    <section class="thanks">♥ Thank you for listening!<br><span>Keep supporting. Keep sharing.</span></section>
-  </main>
+    <h2 id="trackTitle">Press Play</h2>
+    <p id="trackArtist">Loading playlist…</p>
+    <p id="playerStatus">Preparing player…</p>
 
-  <footer>
-    <div>© <span id="year"></span> <b>Flight Mode Radio.</b> All Rights Reserved.</div>
-    <nav><a href="#top">HOME</a><a href="#about">ABOUT</a><a href="#contact">CONTACT</a></nav>
-    <div class="follow">FOLLOW US <span>●</span><span>●</span><span>●</span><span>↗</span></div>
-  </footer>
+    <button id="playBtn">▶</button>
+    <button id="prevBtn">⏮</button>
+    <button id="nextBtn">⏭</button>
+
+    <input id="volume" type="range" min="0" max="100" value="70">
+    <div id="progress"><div id="progressFill"></div></div>
+    <div id="visualizer"></div>
+    <p>© <span id="year"></span> Flight Mode Radio</p>
+  </main>
 
   <script src="https://www.youtube.com/iframe_api"></script>
   <script src="script.js"></script>
