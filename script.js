@@ -1,6 +1,12 @@
 const PLAYLIST_ID = "PLP8gZUHFGFVYLM5qkPlMivAiQ9LHvgI1M";
 
-let player, ready = false, lastVolume = 70, endingIndex = -1;
+let player;
+let ready = false;
+let lastVolume = 70;
+let totalTracks = 0;
+let lastIndex = 0;
+let skipTimer = null;
+
 const playBtn = document.getElementById("playBtn");
 const titleEl = document.getElementById("trackTitle");
 const artistEl = document.getElementById("trackArtist");
@@ -10,38 +16,59 @@ const progressFill = document.getElementById("progressFill");
 
 document.getElementById("year").textContent = new Date().getFullYear();
 
-function status(t) { if (statusEl) statusEl.textContent = t; }
+function status(text) {
+  if (statusEl) statusEl.textContent = text;
+}
 
 function updateInfo() {
   if (!ready) return;
-  const data = player.getVideoData();
+
+  const data = player.getVideoData() || {};
   const index = player.getPlaylistIndex();
-  const list = player.getPlaylist() || [];
-  if (data && data.title) titleEl.textContent = data.title;
+
+  if (index >= 0) lastIndex = index;
+
+  // Save the playlist length whenever YouTube provides it.
+  // Do NOT reset it to zero if YouTube temporarily returns [].
+  const playlist = player.getPlaylist();
+  if (Array.isArray(playlist) && playlist.length > 0) {
+    totalTracks = playlist.length;
+  }
+
+  if (data.title) titleEl.textContent = data.title;
+
+  const trackText = totalTracks
+    ? ` • Track ${lastIndex + 1} of ${totalTracks}`
+    : "";
+
   if (artistEl) {
-    artistEl.textContent =
-      `${(data && data.author) || "YouTube"}${list.length ? ` • Track ${index + 1} of ${list.length}` : ""}`;
+    artistEl.textContent = `${data.author || "YouTube"}${trackText}`;
   }
 }
 
-function skipToNext(reason) {
+function advanceToNext() {
   if (!ready) return;
-  const list = player.getPlaylist() || [];
-  const index = player.getPlaylistIndex();
 
-  if (!list.length) {
-    status("Playlist not loaded");
+  clearTimeout(skipTimer);
+  updateInfo();
+
+  // If we know we are on the last track, restart the playlist.
+  if (totalTracks > 0 && lastIndex >= totalTracks - 1) {
+    status("Restarting playlist…");
+    player.playVideoAt(0);
     return;
   }
 
-  if (index < list.length - 1) {
-    status(reason || "Loading next track…");
-    player.nextVideo();
-  } else {
-    // Only loop after the REAL last track, never after track 5.
-    status("Playlist finished — restarting from Track 1");
-    player.playVideoAt(0);
-  }
+  // IMPORTANT: Do not check getPlaylist() here.
+  // YouTube may temporarily return an empty array when a song ends,
+  // even though its internal playlist is still loaded.
+  status("Loading next track…");
+  player.nextVideo();
+}
+
+function scheduleNext() {
+  clearTimeout(skipTimer);
+  skipTimer = setTimeout(advanceToNext, 600);
 }
 
 function onYouTubeIframeAPIReady() {
@@ -58,98 +85,97 @@ function onYouTubeIframeAPIReady() {
       modestbranding: 1
     },
     events: {
-      onReady: () => {
+      onReady: function () {
         ready = true;
         player.setVolume(lastVolume);
+
         player.cuePlaylist({
           listType: "playlist",
           list: PLAYLIST_ID,
           index: 0
         });
+
         status("Ready — press Play");
+
+        // Give YouTube time to populate playlist metadata.
+        setTimeout(updateInfo, 1500);
+        setTimeout(updateInfo, 3000);
       },
 
-      onStateChange: e => {
-        if (e.data === YT.PlayerState.PLAYING) {
-          endingIndex = -1;
+      onStateChange: function (event) {
+        if (event.data === YT.PlayerState.PLAYING) {
+          clearTimeout(skipTimer);
           playBtn.textContent = "❚❚";
           status("LIVE — playing from YouTube");
           updateInfo();
-          return;
         }
 
-        if (e.data === YT.PlayerState.PAUSED) {
+        if (event.data === YT.PlayerState.PAUSED) {
+          clearTimeout(skipTimer);
           playBtn.textContent = "▶";
           status("Paused");
-          return;
         }
 
-        if (e.data === YT.PlayerState.BUFFERING) {
+        if (event.data === YT.PlayerState.BUFFERING) {
           status("Buffering…");
-          return;
         }
 
-        if (e.data === YT.PlayerState.CUED) {
+        if (event.data === YT.PlayerState.CUED) {
           updateInfo();
           status("Ready — press Play");
-          return;
         }
 
-        if (e.data === YT.PlayerState.ENDED) {
-          // Some embedded playlist sessions stop instead of advancing.
-          // Move forward one item, but NEVER reset unless this is the last item.
-          const index = player.getPlaylistIndex();
-          if (endingIndex === index) return;
-          endingIndex = index;
-          setTimeout(() => skipToNext("Loading next track…"), 700);
+        if (event.data === YT.PlayerState.ENDED) {
+          updateInfo();
+          scheduleNext();
         }
       },
 
-      onError: e => {
-        const codes = {
-          2: "Invalid video",
-          5: "HTML5 player error",
-          100: "Video unavailable",
-          101: "Embedding not allowed",
-          150: "Embedding not allowed"
-        };
-        status(`${codes[e.data] || "Video error"} — skipping…`);
-        setTimeout(() => skipToNext("Skipping unavailable track…"), 800);
+      onError: function () {
+        status("Unavailable track — skipping…");
+        scheduleNext();
       }
     }
   });
 }
 
-playBtn.addEventListener("click", () => {
+playBtn.addEventListener("click", function () {
   if (!ready) {
     status("Loading player…");
     return;
   }
-  if (player.getPlayerState() === YT.PlayerState.PLAYING) player.pauseVideo();
-  else player.playVideo();
+
+  if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+    player.pauseVideo();
+  } else {
+    player.playVideo();
+  }
 });
 
-document.getElementById("nextBtn").addEventListener("click", () => {
-  if (ready) skipToNext("Loading next track…");
+document.getElementById("nextBtn").addEventListener("click", function () {
+  if (ready) advanceToNext();
 });
 
-document.getElementById("prevBtn").addEventListener("click", () => {
+document.getElementById("prevBtn").addEventListener("click", function () {
   if (ready) player.previousVideo();
 });
 
-document.getElementById("liveBtn").addEventListener("click", () => {
+document.getElementById("liveBtn").addEventListener("click", function () {
   if (ready) player.playVideo();
 });
 
-volumeEl.addEventListener("input", e => {
+volumeEl.addEventListener("input", function (event) {
   if (!ready) return;
-  lastVolume = +e.target.value;
+
+  lastVolume = Number(event.target.value);
   player.setVolume(lastVolume);
+
   if (lastVolume > 0) player.unMute();
 });
 
-document.getElementById("muteBtn").addEventListener("click", () => {
+document.getElementById("muteBtn").addEventListener("click", function () {
   if (!ready) return;
+
   if (player.isMuted()) {
     player.unMute();
     player.setVolume(lastVolume || 70);
@@ -159,11 +185,12 @@ document.getElementById("muteBtn").addEventListener("click", () => {
   }
 });
 
-document.getElementById("heartBtn").addEventListener("click", function() {
+document.getElementById("heartBtn").addEventListener("click", function () {
   this.classList.toggle("active");
 });
 
 const visualizer = document.getElementById("visualizer");
+
 if (visualizer) {
   for (let i = 0; i < 24; i++) {
     const bar = document.createElement("i");
@@ -172,19 +199,24 @@ if (visualizer) {
   }
 }
 
-setInterval(() => {
+setInterval(function () {
   if (visualizer) {
-    [...visualizer.children].forEach(
-      b => b.style.height = (10 + Math.random() * 60) + "px"
-    );
+    [...visualizer.children].forEach(function (bar) {
+      bar.style.height = (10 + Math.random() * 60) + "px";
+    });
   }
 
-  if (ready && player.getPlayerState() === YT.PlayerState.PLAYING) {
-    const duration = player.getDuration();
-    const current = player.getCurrentTime();
-    if (duration && progressFill) {
-      progressFill.style.width = Math.min(100, current / duration * 100) + "%";
-    }
+  if (ready) {
     updateInfo();
+
+    if (player.getPlayerState() === YT.PlayerState.PLAYING) {
+      const duration = player.getDuration();
+      const current = player.getCurrentTime();
+
+      if (duration && progressFill) {
+        progressFill.style.width =
+          Math.min(100, (current / duration) * 100) + "%";
+      }
+    }
   }
 }, 1000);
