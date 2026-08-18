@@ -5,7 +5,7 @@ let ready = false;
 let lastVolume = 70;
 let totalTracks = 0;
 let lastIndex = 0;
-let skipTimer = null;
+let errorSkipTimer = null;
 
 const playBtn = document.getElementById("playBtn");
 const titleEl = document.getElementById("trackTitle");
@@ -25,28 +25,15 @@ function updateInfo() {
 
   const data = player.getVideoData() || {};
   const index = player.getPlaylistIndex();
-
   if (typeof index === "number" && index >= 0) lastIndex = index;
 
   const playlist = player.getPlaylist();
-  if (Array.isArray(playlist) && playlist.length > 0) {
-    totalTracks = playlist.length;
-  }
+  if (Array.isArray(playlist) && playlist.length > 0) totalTracks = playlist.length;
 
-  if (data.title && titleEl) titleEl.textContent = data.title;
-
+  if (data.title) titleEl.textContent = data.title;
   if (artistEl) {
-    artistEl.textContent =
-      `${data.author || "YouTube"}${totalTracks ? ` • Track ${lastIndex + 1} of ${totalTracks}` : ""}`;
+    artistEl.textContent = `${data.author || "YouTube"}${totalTracks ? ` • Track ${lastIndex + 1} of ${totalTracks}` : ""}`;
   }
-}
-
-function skipUnavailable() {
-  clearTimeout(skipTimer);
-  skipTimer = setTimeout(() => {
-    if (!ready) return;
-    player.nextVideo();
-  }, 1000);
 }
 
 function onYouTubeIframeAPIReady() {
@@ -59,31 +46,27 @@ function onYouTubeIframeAPIReady() {
       autoplay: 0,
       controls: 0,
       playsinline: 1,
-      loop: 1,
       rel: 0,
-      origin: window.location.origin
+      loop: 1
     },
     events: {
       onReady: function () {
         ready = true;
         player.setVolume(lastVolume);
-        player.setLoop(true);
-
         player.cuePlaylist({
           listType: "playlist",
           list: PLAYLIST_ID,
           index: 0
         });
-
+        player.setLoop(true);
         status("Ready — press Play");
-
         setTimeout(updateInfo, 1500);
         setTimeout(updateInfo, 3000);
       },
 
       onStateChange: function (event) {
         if (event.data === YT.PlayerState.PLAYING) {
-          clearTimeout(skipTimer);
+          clearTimeout(errorSkipTimer);
           playBtn.textContent = "❚❚";
           status("LIVE — playing from YouTube");
           updateInfo();
@@ -93,43 +76,28 @@ function onYouTubeIframeAPIReady() {
         } else if (event.data === YT.PlayerState.BUFFERING) {
           status("Buffering…");
         } else if (event.data === YT.PlayerState.CUED) {
+          player.setLoop(true);
           updateInfo();
           status("Ready — press Play");
         }
-
-        // IMPORTANT:
-        // Do NOT call nextVideo() when a normal song ends.
-        // YouTube itself advances through the playlist and setLoop(true)
-        // returns to Track 1 only after the real last playable track.
+        // YouTube handles normal playlist progression.
       },
 
-      onError: function (event) {
-        const errors = {
-          2: "Invalid video",
-          5: "HTML5 player error",
-          100: "Video not found/private",
-          101: "Embedding disabled",
-          150: "Embedding disabled"
-        };
-
-        status(`${errors[event.data] || "Unavailable track"} — skipping…`);
-        skipUnavailable();
+      onError: function () {
+        status("Unavailable track — skipping…");
+        clearTimeout(errorSkipTimer);
+        errorSkipTimer = setTimeout(function () {
+          if (ready) player.nextVideo();
+        }, 1000);
       }
     }
   });
 }
 
 playBtn.addEventListener("click", function () {
-  if (!ready) {
-    status("Loading player…");
-    return;
-  }
-
-  if (player.getPlayerState() === YT.PlayerState.PLAYING) {
-    player.pauseVideo();
-  } else {
-    player.playVideo();
-  }
+  if (!ready) return status("Loading player…");
+  if (player.getPlayerState() === YT.PlayerState.PLAYING) player.pauseVideo();
+  else player.playVideo();
 });
 
 document.getElementById("nextBtn").addEventListener("click", function () {
@@ -146,16 +114,13 @@ document.getElementById("liveBtn").addEventListener("click", function () {
 
 volumeEl.addEventListener("input", function (event) {
   if (!ready) return;
-
   lastVolume = Number(event.target.value);
   player.setVolume(lastVolume);
-
   if (lastVolume > 0) player.unMute();
 });
 
 document.getElementById("muteBtn").addEventListener("click", function () {
   if (!ready) return;
-
   if (player.isMuted()) {
     player.unMute();
     player.setVolume(lastVolume || 70);
@@ -187,14 +152,11 @@ setInterval(function () {
 
   if (ready) {
     updateInfo();
-
     if (player.getPlayerState() === YT.PlayerState.PLAYING) {
       const duration = player.getDuration();
       const current = player.getCurrentTime();
-
       if (duration && progressFill) {
-        progressFill.style.width =
-          Math.min(100, (current / duration) * 100) + "%";
+        progressFill.style.width = Math.min(100, (current / duration) * 100) + "%";
       }
     }
   }
