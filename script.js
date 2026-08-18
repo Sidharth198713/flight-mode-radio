@@ -2,9 +2,10 @@ const PLAYLIST_ID = "PLP8gZUHFGFVYLM5qkPlMivAiQ9LHvgI1M";
 
 let player;
 let ready = false;
-let totalTracks = 0;
 let lastVolume = 70;
-let errorSkipTimer = null;
+let totalTracks = 0;
+let lastIndex = 0;
+let skipTimer = null;
 
 const playBtn = document.getElementById("playBtn");
 const titleEl = document.getElementById("trackTitle");
@@ -24,51 +25,55 @@ function updateInfo() {
 
   const data = player.getVideoData() || {};
   const index = player.getPlaylistIndex();
-  const playlist = player.getPlaylist();
 
+  if (typeof index === "number" && index >= 0) lastIndex = index;
+
+  const playlist = player.getPlaylist();
   if (Array.isArray(playlist) && playlist.length > 0) {
     totalTracks = playlist.length;
   }
 
-  if (data.title) titleEl.textContent = data.title;
+  if (data.title && titleEl) titleEl.textContent = data.title;
 
   if (artistEl) {
-    const track = (index >= 0 && totalTracks > 0)
-      ? ` • Track ${index + 1} of ${totalTracks}`
-      : "";
-    artistEl.textContent = `${data.author || "YouTube"}${track}`;
+    artistEl.textContent =
+      `${data.author || "YouTube"}${totalTracks ? ` • Track ${lastIndex + 1} of ${totalTracks}` : ""}`;
   }
+}
+
+function skipUnavailable() {
+  clearTimeout(skipTimer);
+  skipTimer = setTimeout(() => {
+    if (!ready) return;
+    player.nextVideo();
+  }, 1000);
 }
 
 function onYouTubeIframeAPIReady() {
   player = new YT.Player("player", {
-    // Keep a valid YouTube player viewport. It can be hidden with CSS.
-    height: "200",
-    width: "200",
+    height: "1",
+    width: "1",
     playerVars: {
       listType: "playlist",
       list: PLAYLIST_ID,
       autoplay: 0,
       controls: 0,
       playsinline: 1,
+      loop: 1,
       rel: 0,
-      enablejsapi: 1,
       origin: window.location.origin
     },
     events: {
       onReady: function () {
         ready = true;
         player.setVolume(lastVolume);
+        player.setLoop(true);
 
-        // Let YouTube itself control the complete playlist.
         player.cuePlaylist({
           listType: "playlist",
           list: PLAYLIST_ID,
           index: 0
         });
-
-        // Loop only after the actual last track.
-        player.setLoop(true);
 
         status("Ready — press Play");
 
@@ -78,7 +83,7 @@ function onYouTubeIframeAPIReady() {
 
       onStateChange: function (event) {
         if (event.data === YT.PlayerState.PLAYING) {
-          clearTimeout(errorSkipTimer);
+          clearTimeout(skipTimer);
           playBtn.textContent = "❚❚";
           status("LIVE — playing from YouTube");
           updateInfo();
@@ -88,24 +93,27 @@ function onYouTubeIframeAPIReady() {
         } else if (event.data === YT.PlayerState.BUFFERING) {
           status("Buffering…");
         } else if (event.data === YT.PlayerState.CUED) {
-          // Reapply loop after the playlist has actually been loaded.
-          player.setLoop(true);
           updateInfo();
           status("Ready — press Play");
         }
 
         // IMPORTANT:
-        // No ENDED handler and no manual nextVideo().
-        // YouTube advances Track 1 -> 2 -> 3 ... -> 200 itself.
+        // Do NOT call nextVideo() when a normal song ends.
+        // YouTube itself advances through the playlist and setLoop(true)
+        // returns to Track 1 only after the real last playable track.
       },
 
-      onError: function () {
-        // Only skip when YouTube explicitly reports a bad/unembeddable item.
-        clearTimeout(errorSkipTimer);
-        status("Unavailable track — skipping…");
-        errorSkipTimer = setTimeout(function () {
-          if (ready) player.nextVideo();
-        }, 1000);
+      onError: function (event) {
+        const errors = {
+          2: "Invalid video",
+          5: "HTML5 player error",
+          100: "Video not found/private",
+          101: "Embedding disabled",
+          150: "Embedding disabled"
+        };
+
+        status(`${errors[event.data] || "Unavailable track"} — skipping…`);
+        skipUnavailable();
       }
     }
   });
@@ -138,8 +146,10 @@ document.getElementById("liveBtn").addEventListener("click", function () {
 
 volumeEl.addEventListener("input", function (event) {
   if (!ready) return;
+
   lastVolume = Number(event.target.value);
   player.setVolume(lastVolume);
+
   if (lastVolume > 0) player.unMute();
 });
 
@@ -160,7 +170,6 @@ document.getElementById("heartBtn").addEventListener("click", function () {
 });
 
 const visualizer = document.getElementById("visualizer");
-
 if (visualizer) {
   for (let i = 0; i < 24; i++) {
     const bar = document.createElement("i");
